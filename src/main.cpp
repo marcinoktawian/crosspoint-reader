@@ -160,8 +160,8 @@ void verifyPowerButtonDuration() {
     do {
       delay(10);
       gpio.update();
-    } while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() < calibratedPressDuration);
-    abort = gpio.getHeldTime() < calibratedPressDuration;
+    } while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() < calibratedPressDuration);
+    abort = gpio.getPowerButtonHeldTime() < calibratedPressDuration;
   } else {
     abort = true;
   }
@@ -413,7 +413,7 @@ void loop() {
     return;
   }
 
-  if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getHeldTime() > SETTINGS.getPowerButtonDuration()) {
+  if (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {
       return;
@@ -436,36 +436,24 @@ void loop() {
   }
 
   static bool lockButtonComboActive = false;
-  if (gpio.isPressed(HalGPIO::BTN_POWER) && mappedInputManager.isPressed(MappedInputManager::Button::Back) &&
-      APP_STATE.buttonsLocked) {
+  if (SETTINGS.buttonsLockMode == CrossPointSettings::BUTTONS_LOCK_MODE::BUTTONS_LOCK_BACK_POWER &&
+      gpio.isPressed(HalGPIO::BTN_POWER) && mappedInputManager.isPressed(MappedInputManager::Button::Back)) {
     lockButtonComboActive = true;
     return;
   }
 
-  // If unlock combo was just activated, wait for buttons to be released before processing further
-  if (lockButtonComboActive &&
+  if (SETTINGS.buttonsLockMode == CrossPointSettings::BUTTONS_LOCK_MODE::BUTTONS_LOCK_BACK_POWER &&
+      lockButtonComboActive &&
       (!gpio.isPressed(HalGPIO::BTN_POWER) || !mappedInputManager.isPressed(MappedInputManager::Button::Back))) {
     if (!gpio.isPressed(HalGPIO::BTN_POWER) && !mappedInputManager.isPressed(MappedInputManager::Button::Back)) {
       lockButtonComboActive = false;
-      APP_STATE.buttonsLocked = false;
-      APP_STATE.buttonsLockedDisplayed = false;  // Reset flag so popup shows next frame
-      LOG_DBG("MAIN", "Buttons UNLOCKED");
+      APP_STATE.buttonsLocked = !APP_STATE.buttonsLocked;  // Toggle lock state
+      APP_STATE.buttonsLockedDisplayed = false;            // Reset flag so popup shows next frame
+      LOG_DBG("MAIN", "Buttons %s", APP_STATE.buttonsLocked ? "LOCKED" : "UNLOCKED");
       activityManager.requestUpdate();  // Update display when lock state changes
       return;                           // Don't process any button presses in this frame
     }
     return;  // Wait for both buttons to be released
-  }
-
-  // Handle LOCK_BUTTONS - lock/unlock buttons with short power press
-  // MUST be checked BEFORE the lock block below so unlock always works!
-  if (mappedInputManager.wasReleased(MappedInputManager::Button::Power) &&
-      SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::LOCK_BUTTONS && !lockButtonComboActive &&
-      !APP_STATE.buttonsLocked) {
-    APP_STATE.buttonsLocked = true;
-    APP_STATE.buttonsLockedDisplayed = false;  // Reset flag so popup shows next frame
-    LOG_DBG("MAIN", "Buttons LOCKED");
-    activityManager.requestUpdate();  // Update display when lock state changes
-    return;                           // Don't process any button presses in this frame
   }
 
   // Show lock indicator popup when buttons are locked (only once per lock activation)
